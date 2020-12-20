@@ -11,10 +11,11 @@
 // #include "driver/gpio.h"
 #include "i2cw.h"
 #include "ICM20948.h"
-#include "timerw.h"
-#include "driver/uart.h"
+// #include "timerw.h"
+// #include "driver/uart.h"
+#include "driver/i2c.h"
 
-#include "MadgwickAHRS.h"
+// #include "MadgwickAHRS.h"
 
 
 // void qmul(float p[], float q[], float *pq) {
@@ -30,8 +31,8 @@ static void control_loop(void *arg)
     // setup 
 
     // Stopwatch timer;
-    I2CMaster i2c(0,26,25,400000); // configure i2c bus
-    ICM20948 imu(i2c);
+    I2CMaster i2c(0, 26, 25, 400000); // configure i2c bus
+    ICM20948 icm(i2c);
 
 
     // uart_config_t uart_config = {
@@ -50,7 +51,7 @@ static void control_loop(void *arg)
     // float magdata[3];
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t Ts = 100;
+    const TickType_t Ts = 50;
     // float imucal[] = {0.f,0.f,0.f,0.f,0.f,0.f,0.f};
 
     // calibrate gyroscope/accelerometer
@@ -73,13 +74,14 @@ static void control_loop(void *arg)
     // ftype q[4], p[4], q0[4] = {1.,0.,0.,0.};
     // ftype s, dtheta, dt_2, nx, ny, nz;
     // timer.start();
-    uint8_t data[24];
 
+    float d[10];
     while(1) {
+        icm.readSensors(d);
+        printf("% 6.3f % 6.3f % 6.3f, % 6.1f % 6.1f % 6.1f,  % 6.1f % 6.1f % 6.1f\n", d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8]);
 
-        imu.readAHRS(data);
-        printf("%02x %02x %02x %02x %02x %02x\n", data[14], data[16], data[17], data[18], data[19], data[20]);
-        // imu.readMagData(mdata);
+        // imu.readAHRS(data);
+        // printf("%02x %02x %02x %02x %02x %02x\n", data[14], data[16], data[17], data[18], data[19], data[20]);
         // printf("%f, %f, %f\n", mdata[0], mdata[1], mdata[2]);
         // imu.read_imu(imudata+1);
         // imudata[1]-=imucal[1]; imudata[2]-=imucal[2]; imudata[3]-=imucal[3];
