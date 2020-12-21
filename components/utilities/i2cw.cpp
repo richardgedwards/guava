@@ -1,7 +1,6 @@
 #include "i2cw.h"
 #include "esp_exception.h"  // define THROW macro
-using namespace idf;
-
+#include "esp_log.h"
 
 
 // I2CMaster
@@ -12,9 +11,8 @@ I2CMaster::I2CMaster(i2c_port_t port, int sda_io_num, int scl_io_num, uint32_t c
     _config.scl_pullup_en = GPIO_PULLUP_ENABLE; 
     _config.mode = I2C_MODE_MASTER;
     _config.master.clk_speed = clk_speed;
-
-    THROW(i2c_param_config(_port, &_config));
-    THROW(i2c_driver_install(_port, _config.mode, 0, 0, 0));
+    i2c_param_config(_port, &_config);
+    i2c_driver_install(_port, _config.mode, 0, 0, 0);
 }
 
 

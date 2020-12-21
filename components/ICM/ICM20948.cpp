@@ -1,32 +1,24 @@
 #include "ICM20948.h"
 #include <stdio.h>
+#include <iostream>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include <iostream>
-
-using std::cout;
-using std::endl;
-using std::runtime_error;
 
 
 AK09916::AK09916(I2CMaster &i2c) : I2CDevice(I2C_ADDR, i2c) {
     uint8_t value;
-    readRegister(WIA2, &value);
-    if (value != CHIP_ID) throw(runtime_error("AK09916 not found"));
-    writeRegister(CNTL3, 0x01);  // reset
-    writeRegister(CNTL2, 0x08);  // mode 4 - 100 Hz sample frequency
-    vTaskDelay(10/ portTICK_RATE_MS);
+    readRegister(WIA2, &value); if (value != CHIP_ID) throw(std::runtime_error("AK09916 not found"));
+    writeRegister(CNTL3, 0x01); vTaskDelay(5/portTICK_RATE_MS);  // reset and delay 100us (see sec 9.3)
+    writeRegister(CNTL2, MDR_100HZ); vTaskDelay(10/portTICK_RATE_MS); // set sample rate
 }
 
 
-
-ICM20948::ICM20948(I2CMaster &i2c) : I2CDevice(I2C_ADDR_ALT, i2c), _bank(0) { 
+ICM20948::ICM20948(I2CMaster &i2c) : I2CDevice(I2C_ADDR_ALT, i2c) { 
 
     uint8_t value;
     setBank(0);
-    readRegister(WHO_AM_I, &value); 
-    if (value != CHIP_ID) throw(runtime_error("ICM20948 not found"));
+    readRegister(WHO_AM_I, &value); if (value != CHIP_ID) throw(std::runtime_error("ICM20948 not found"));
     writeRegister(PWR_MGMT_1, 0x80); vTaskDelay(10 / portTICK_RATE_MS); // reset
     writeRegister(PWR_MGMT_1, 0x01); // autoselect best clock source
 
@@ -42,86 +34,104 @@ ICM20948::ICM20948(I2CMaster &i2c) : I2CDevice(I2C_ADDR_ALT, i2c), _bank(0) {
 
     writeRegister(PWR_MGMT_2, 0x00); // enable accelerometer and gyro
 
-    // put I2C Master in bypass-mode
-    setBank(0);
-    // writeRegister(USER_CTRL, 0x00);  // not needed since this is the default
-    writeRegister(INT_PIN_CFG, 0x02); // set to bypass mode
-    writeRegister(USER_CTRL, 0x02);  // reset I2C Master Module
 
-    // init magnetometer
-    try {AK09916 mag(i2c);} catch(const runtime_error &e) {cout << e.what() << endl;}
+    // configure magnetometer
+    // Ref: https://github.com/kriswiner/MPU9250/issues/86
 
-    // setup and use I2C master to read sensors - ref: https://github.com/kriswiner/MPU9250/issues/86
-    // enableI2CMaster mode 
-    setBank(0);
-    writeRegister(INT_PIN_CFG, 0x00); // disable bypass mode
+    // Method 1: Pass-through mode - use primary I2C bus to communicate with magnetometer
+    configI2CAuxilary(PASSTHROUGH_MODE);
+    try {AK09916 mag(i2c);} catch(const std::runtime_error &e) {std::cerr << e.what() << std::endl;}
 
-    // configure I2CMaster
-    // I2C_MST_CLK[7] = 0; Enables multi-master capability (If there are other masters on the bus switch this bit high)
-    // I2C_MST_CLK[5:6] Reserved
-    // I2C_MST_CLK[4] = 1; 1=Full stop between reads, 0=restart
-    // I2C_MST_CLK[3:0] = 7; recommended in data sheet sec 14.5
+    configI2CAuxilary(MASTER_MODE);
+
+    // Method 2: I2CMaster Mode - use auxilary I2C bus to communicate with magnetometer
+    // readMagRegister(AK09916::WIA2, &value); if (value != AK09916::CHIP_ID) throw(std::runtime_error("AK09916 not found\n"));
+    // writeMagRegister(AK09916::CNTL3, 0x01); vTaskDelay(5/portTICK_RATE_MS); // reset and delay 100us (see sec 9.3)
+    // writeMagRegister(AK09916::CNTL2, 0x08); vTaskDelay(10/portTICK_RATE_MS); // set sample rate: CNTL2[4:0] = 0x0:PWR DOWN, 0x02:10Hz, 0x04:20Hz, 0x06:50Hz, 0x08:100Hz
+
+    // configure slave0 to write to EXT_SLV_SENS_DATA_00
     setBank(3);
-    writeRegister(I2C_MST_CTRL, 0x17);
+    writeRegister(I2C_SLV0_ADDR, AK09916::I2C_ADDR | 0x80);    
+	writeRegister(I2C_SLV0_REG, AK09916::HXL); // start reading here
+	writeRegister(I2C_SLV0_CTRL, 0x80 | 8); // read in continuously at sample rate of gyro
+    // note:  it seems  you must read in ST2 for it to update
+}
+
+
+void ICM20948::configI2CAuxilary(AUXI2C mode) {
+    if(mode==MASTER_MODE) {
+        setBank(0);
+        writeRegister(INT_PIN_CFG, 0x00); // disable bypass mode
+        setBank(3);
+        writeRegister(I2C_MST_CTRL, 0x17); // Full-stop and 400KHz
+        setBank(0);
+        writeRegister(USER_CTRL, 0x20);   // Enable I2C Master I/F Module
+    } else if(mode==PASSTHROUGH_MODE){
+        setBank(0);
+        writeRegister(USER_CTRL, 0x00);   // disable I2C Master I/F Module
+        writeRegister(INT_PIN_CFG, 0x02); // enable bypass mode
+        writeRegister(USER_CTRL, 0x02);   // reset I2C Master Module (not sure why this is needed)
+    }
+}
+
+
+void ICM20948::readSensors(float *data) {
+    uint8_t d[20], idx;
+    int16_t ai, aj, ak, gi, gj, gk, Ti, mi, mj, mk;
+    float s, ax, ay, az, gx, gy, gz, T, mx, my, mz;
+
     setBank(0);
-    writeRegister(USER_CTRL, 0x20);   // Enable I2C Master IF Module
+    read(ACCEL_XOUT_H, d, 20);
+    ai = d[ 0]<<8 | d[ 1];  aj = d[ 2]<<8 | d[ 3];  ak = d[ 4]<<8 | d[ 5];
+    gi = d[ 6]<<8 | d[ 7];  gj = d[ 8]<<8 | d[ 9];  gk = d[10]<<8 | d[11];
+    Ti = d[12]<<8 | d[13];
+    mi = d[15]<<8 | d[14];  mj = d[17]<<8 | d[16];  mk = d[19]<<8 | d[18];
 
-    readMagRegister(MAG_WIA, &value);  if (value != MAG_CHIP_ID) printf("MAG not found\n"); else printf("MAG found\n");
+    setBank(2);
+    readRegister(ACCEL_CONFIG, &idx);
+    s = accel_sensitvity[(idx & 0x06) >> 1];
+    ax = float(ai)/s; ay = float(aj)/s; az = float(ak)/s; 
 
-    // configure I2CMaster to read from slave0
-    setBank(3);
-    // writeRegister(I2C_MST_DELAY_CTRL, 0x01); // not sure what this does (delay on how oftern it is written?)
-    writeRegister(I2C_SLV0_ADDR, MAG_I2C_ADDR); // MAG_I2C_ADDR[7]=0 defines a write operation 
-    writeRegister(I2C_SLV0_REG, MAG_ST1);  // where to begin data transfer
-    // I2C_SLV0_CTRL[7] = 1; enable reading data from slave 0
-    // I2C_SLV0_CTRL[6] = 1; swap bytes when reading a word
-    // I2C_SLV0_CTRL[5] = 0; do not write register values, only read or write data
-    // I2C_SLV0_CTRL[4] = 1; group 1 and 2 (odd) bytes to gether
-    // I2C_SLV0_CTRL[3:0] = 1010; Number of bytes to read from I2C slave 0
-    writeRegister(I2C_SLV0_CTRL, 0xda);
+    readRegister(GYRO_CONFIG_1, &idx);
+    s = gyro_sensitvity[(idx & 0x06) >> 1];
+    gx = float(gi)/s; gy = float(gj)/s; gz = float(gk)/s; 
 
+    T = (Ti-21.0f)/333.87f + 21.0f;
 
-    // readMagRegister(MAG_WIA, &value);  if (value != MAG_CHIP_ID) printf("MAG not found\n"); else printf("MAG found\n");
-    // readMagRegisters(MAG_HXL, data, 6); 
-    // printf("%02x %02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4], data[5]);
-    // read(EXT_SLV_SENS_DATA_00, data, 6);
-    // printf("%02x %02x %02x %02x %02x %02x\n", data[0], data[1], data[2], data[3], data[4], data[5]);
+    mx = mi*mag_sensitivity; my = mj*mag_sensitivity; mz = mk*mag_sensitivity; 
 
-    // reset the magnetometer
-    // writeMagRegister(MAG_CNTL3, 0x01);
-    // readMagRegister(MAG_CNTL3, &value);
-    // while (value==0x01) {
-    //     vTaskDelay(1 / portTICK_RATE_MS);
-    //     readMagRegister(MAG_CNTL3, &value);
-    // }
-
-   
+    data[0] = ax; data[1] = ay, data[2] = az;
+    data[3] = gx; data[4] = gy, data[5] = gz;
+    data[6] = mx; data[7] = my, data[8] = mz;
+    data[9] = T;
 }
 
 
 void ICM20948::readMagRegister(uint8_t register_address, uint8_t* value) {
     setBank(3);
-    writeRegister(I2C_SLV0_ADDR, MAG_I2C_ADDR | 0x80);
+    writeRegister(I2C_SLV0_ADDR, AK09916::I2C_ADDR | 0x80);
     writeRegister(I2C_SLV0_REG, register_address);
     writeRegister(I2C_SLV0_CTRL, 0x80 | 1);  // Read 1 byte   
     triggerMagIO();
+    setBank(0);
     readRegister(EXT_SLV_SENS_DATA_00, value);
 }
 
 
 void ICM20948::readMagRegisters(uint8_t register_address, uint8_t* data, uint length) {
     setBank(3);
-    writeRegister(I2C_SLV0_ADDR, MAG_I2C_ADDR | 0x80);    
+    writeRegister(I2C_SLV0_ADDR, AK09916::I2C_ADDR | 0x80);    
 	writeRegister(I2C_SLV0_REG, register_address);
 	writeRegister(I2C_SLV0_CTRL, 0x80 | length);
     triggerMagIO();
+    setBank(0);
 	read(EXT_SLV_SENS_DATA_00, data, length);     
 }
 
 
 void ICM20948::writeMagRegister(uint8_t register_address, uint8_t value) {
     setBank(3);
-    writeRegister(I2C_SLV0_ADDR, MAG_I2C_ADDR);
+    writeRegister(I2C_SLV0_ADDR, AK09916::I2C_ADDR);
 	writeRegister(I2C_SLV0_REG, register_address);
 	writeRegister(I2C_SLV0_DO, value);
     triggerMagIO();
@@ -138,70 +148,8 @@ void ICM20948::triggerMagIO() {
 }
 
 
-// void ICM20948::readMagData(float *magdata) {
-//     uint8_t data[6];
-//     int16_t mi, mj, mk;
-//     writeMagRegister(MAG_CNTL2, 0x01);  // Trigger single measurement
-//     while (!isMagReady())
-//         vTaskDelay(1 / portTICK_RATE_MS);
-//     readMagRegisters(MAG_HXL, data, 6);
-//     // setBank(0);
-//     // read(EXT_SLV_SENS_DATA_00, data, 6);
-
-//     mi = data[1]<<8 | data[0]; mj = data[3]<<8 | data[2]; mk = data[5]<<8 | data[4]; 
-//     // mi = (((int16_t)data[1]) << 8) | data[0];
-//     // mj = (((int16_t)data[3]) << 8) | data[2];
-//     // mk = (((int16_t)data[5]) << 8) | data[4];
-//     // printf("%d, %d, %d\n", mi, mj, mk);
-//     magdata[0] = mi;// * mag_sensitivity;
-//     magdata[1] = mj;// * mag_sensitivity;
-//     magdata[2] = mk;// * mag_sensitivity;
-// }
-
-
-// bool ICM20948::isMagReady() {
-//     uint8_t value;
-//     readMagRegister(MAG_ST1, &value);
-//     return((value & 0x01) > 0);
-// }
-
-
-void ICM20948::readAHRS(uint8_t *data) {
-    setBank(0);
-    read(ACCEL_XOUT_H, data, 24);
-}
-
-
-void ICM20948::readIMU(float *imudata) {
-
-    uint8_t data[12], idx;
-    int16_t ai, aj, ak, gi, gj, gk;
-    float s, ax, ay, az, gx, gy, gz;
-
-    setBank(0);
-    read(ACCEL_XOUT_H, data, 12);
-    ai = data[0]<<8 | data[1]; aj = data[2]<<8 | data[3]; ak = data[4]<<8 | data[5];
-    gi = data[6]<<8 | data[7]; gj = data[8]<<8 | data[9]; gk = data[10]<<8 | data[11];
-
-    setBank(2);
-    readRegister(ACCEL_CONFIG, &idx);
-    s = accel_sensitvity[(idx & 0x06) >> 1];
-    ax = float(ai)/s; ay = float(aj)/s; az = float(ak)/s; 
-
-    readRegister(GYRO_CONFIG_1, &idx);
-    s = gyro_sensitvity[(idx & 0x06) >> 1];
-    gx = float(gi)/s; gy = float(gj)/s; gz = float(gk)/s; 
-
-    imudata[0] = gx; imudata[1] = gy, imudata[2] = gz;
-    imudata[3] = ax; imudata[4] = ay, imudata[5] = az;
-}
-
-
 void ICM20948::setBank(uint8_t value) {
-    if (_bank != value) {
-        writeRegister(setBank_SEL, value << 4);
-        _bank = value;
-    }
+    writeRegister(BANKSEL, value << 4);
 }
 
 
