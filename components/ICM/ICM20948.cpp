@@ -5,14 +5,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-using std::cout;
-using std::endl;
-using std::runtime_error;
-
 
 AK09916::AK09916(I2CMaster &i2c) : I2CDevice(I2C_ADDR, i2c) {
     uint8_t value;
-    readRegister(WIA2, &value); if (value != CHIP_ID) throw(runtime_error("AK09916 not found"));
+    readRegister(WIA2, &value); if (value != CHIP_ID) throw(std::runtime_error("AK09916 not found"));
     writeRegister(CNTL3, 0x01); vTaskDelay(5/portTICK_RATE_MS);  // reset and delay 100us (see sec 9.3)
     writeRegister(CNTL2, MDR_100HZ); vTaskDelay(10/portTICK_RATE_MS); // set sample rate
 }
@@ -22,7 +18,7 @@ ICM20948::ICM20948(I2CMaster &i2c) : I2CDevice(I2C_ADDR_ALT, i2c) {
 
     uint8_t value;
     setBank(0);
-    readRegister(WHO_AM_I, &value); if (value != CHIP_ID) throw(runtime_error("ICM20948 not found"));
+    readRegister(WHO_AM_I, &value); if (value != CHIP_ID) throw(std::runtime_error("ICM20948 not found"));
     writeRegister(PWR_MGMT_1, 0x80); vTaskDelay(10 / portTICK_RATE_MS); // reset
     writeRegister(PWR_MGMT_1, 0x01); // autoselect best clock source
 
@@ -44,12 +40,12 @@ ICM20948::ICM20948(I2CMaster &i2c) : I2CDevice(I2C_ADDR_ALT, i2c) {
 
     // Method 1: Pass-through mode - use primary I2C bus to communicate with magnetometer
     configI2CAuxilary(PASSTHROUGH_MODE);
-    try {AK09916 mag(i2c);} catch(const runtime_error &e) {std::cerr << e.what() << endl;}
+    try {AK09916 mag(i2c);} catch(const std::runtime_error &e) {std::cerr << e.what() << std::endl;}
 
     configI2CAuxilary(MASTER_MODE);
 
     // Method 2: I2CMaster Mode - use auxilary I2C bus to communicate with magnetometer
-    // readMagRegister(AK09916::WIA2, &value); if (value != AK09916::CHIP_ID) throw(runtime_error("AK09916 not found\n"));
+    // readMagRegister(AK09916::WIA2, &value); if (value != AK09916::CHIP_ID) throw(std::runtime_error("AK09916 not found\n"));
     // writeMagRegister(AK09916::CNTL3, 0x01); vTaskDelay(5/portTICK_RATE_MS); // reset and delay 100us (see sec 9.3)
     // writeMagRegister(AK09916::CNTL2, 0x08); vTaskDelay(10/portTICK_RATE_MS); // set sample rate: CNTL2[4:0] = 0x0:PWR DOWN, 0x02:10Hz, 0x04:20Hz, 0x06:50Hz, 0x08:100Hz
 
