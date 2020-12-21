@@ -56,8 +56,9 @@ ICM20948::ICM20948(I2CMaster &i2c) : I2CDevice(I2C_ADDR_ALT, i2c) {
     // configure slave0 to write to EXT_SLV_SENS_DATA_00
     setBank(3);
     writeRegister(I2C_SLV0_ADDR, AK09916::I2C_ADDR | 0x80);    
-	writeRegister(I2C_SLV0_REG, AK09916::ST1); // start reading at ST1
-	writeRegister(I2C_SLV0_CTRL, 0x80 | 10); // read in 10 bytes continuously at sample rate of gyro
+	writeRegister(I2C_SLV0_REG, AK09916::HXL); // start reading here
+	writeRegister(I2C_SLV0_CTRL, 0x80 | 8); // read in continuously at sample rate of gyro
+    // note:  it seems  you must read in ST2 for it to update
 }
 
 
@@ -87,8 +88,8 @@ void ICM20948::readSensors(float *data) {
     read(ACCEL_XOUT_H, d, 20);
     ai = d[ 0]<<8 | d[ 1];  aj = d[ 2]<<8 | d[ 3];  ak = d[ 4]<<8 | d[ 5];
     gi = d[ 6]<<8 | d[ 7];  gj = d[ 8]<<8 | d[ 9];  gk = d[10]<<8 | d[11];
-    mi = d[16]<<8 | d[15];  mj = d[18]<<8 | d[17];  mk = d[20]<<8 | d[19];
     Ti = d[12]<<8 | d[13];
+    mi = d[15]<<8 | d[14];  mj = d[17]<<8 | d[16];  mk = d[19]<<8 | d[18];
 
     setBank(2);
     readRegister(ACCEL_CONFIG, &idx);

@@ -1,6 +1,5 @@
 #ifndef __ICM20948_H__
 #define __ICM20948_H__
-
 #include "i2cw.h"
 
 // ICM20948MCM (multi-chip-module)
@@ -26,7 +25,6 @@ class AK09916 : public I2CDevice {
 
     AK09916(I2CMaster &i2c);
     const float sensitivity = 0.15f;
-
     static const uint8_t I2C_ADDR = 0x0c;
     static const uint8_t CHIP_ID = 0x09;
     static const uint8_t WIA1 = 0x00;
@@ -69,12 +67,6 @@ class ICM20948 : public I2CDevice {
     void writeMagRegister(uint8_t register_address, uint8_t data);
     void readMagRegister(uint8_t register_address, uint8_t* value);
     void readMagRegisters(uint8_t register_address, uint8_t* data, uint length);
-
-    protected:
-    // uint8_t d[24], idx;
-    // int16_t ai, aj, ak, gi, gj, gk, mi, mj, mk;
-    // float s, ax, ay, az, gx, gy, gz, mx, my, mz;
-
 
     public:
     const float accel_sensitvity[4] = {16384.f, 8192.f, 4096.f, 2048.f};

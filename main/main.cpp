@@ -2,18 +2,14 @@
 
 #include <stdio.h>
 #include "sdkconfig.h"
-
 #include <math.h>
-#include <string.h>
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-// #include "driver/gpio.h"
 #include "i2cw.h"
 #include "ICM20948.h"
+// #include "driver/gpio.h"
 // #include "timerw.h"
 // #include "driver/uart.h"
-#include "driver/i2c.h"
 
 // #include "MadgwickAHRS.h"
 
@@ -78,7 +74,12 @@ static void control_loop(void *arg)
     float d[10];
     while(1) {
         icm.readSensors(d);
-        printf("% 6.3f % 6.3f % 6.3f, % 6.1f % 6.1f % 6.1f,  % 6.1f % 6.1f % 6.1f\n", d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8]);
+        printf("Accel: % 9.3f % 9.3f % 9.3f g\n", d[0], d[1], d[2]);
+        printf(" Gyro: % 9.3f % 9.3f % 9.3f dps\n", d[3], d[4], d[5]);
+        printf("  Mag: % 9.3f % 9.3f % 9.3f uT\n", d[6], d[7], d[8]);
+        printf(" Temp: % 9.3f C\n", d[9]);
+        printf("\033[2J\033[1;1H");  // clear screen
+
 
         // imu.readAHRS(data);
         // printf("%02x %02x %02x %02x %02x %02x\n", data[14], data[16], data[17], data[18], data[19], data[20]);
