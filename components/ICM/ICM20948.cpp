@@ -40,7 +40,7 @@ ICM20948::ICM20948(I2CMaster &i2c) : I2CDevice(I2C_ADDR_ALT, i2c) {
 
     // Method 1: Pass-through mode - use primary I2C bus to communicate with magnetometer
     configI2CAuxilary(PASSTHROUGH_MODE);
-    try {AK09916 mag(i2c);} catch(const std::runtime_error &e) {std::cerr << e.what() << std::endl;}
+    AK09916 mag(i2c);
 
     configI2CAuxilary(MASTER_MODE);
 
