@@ -1,8 +1,15 @@
 {
-    "files.associations": {
-        "stdexcept": "cpp",
-        "array": "cpp",
-        "string": "cpp",
-        "string_view": "cpp"
-    }
+  "C_Cpp.clang_format_style": "Visual Studio",
+  "editor.formatOnSave": false,
+  "[cpp]": {
+    "editor.quickSuggestions": true
+  },
+  "[c]": {
+    "editor.quickSuggestions": true
+  },
+  "C_Cpp.intelliSenseEngineFallback": "Enabled",
+  "idf.port": "/dev/ttyUSB0",
+  "files.associations": {
+    "esp_spi_flash.h": "c"
+  }
 }
